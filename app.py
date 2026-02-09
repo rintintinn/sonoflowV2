@@ -1,3 +1,4 @@
+import pathlib
 import streamlit as st
 import numpy as np
 import scipy.signal as sig
@@ -6,6 +7,8 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import scipy.integrate
 from scipy.ndimage import gaussian_filter1d
+
+APP_DIR = pathlib.Path(__file__).parent
 
 # ---------------------------------------------------------------------------
 # Page config & theme
@@ -78,6 +81,9 @@ plt.rcParams.update(CLINICAL_STYLE)
 # Sidebar
 # ---------------------------------------------------------------------------
 with st.sidebar:
+    logo_path = APP_DIR / "UrologyMYLogo.png"
+    if logo_path.exists():
+        st.image(str(logo_path), width=180)
     st.header("Configuration")
     uploaded_file = st.file_uploader("Upload Audio (WAV)", type=["wav"])
     total_volume_ml = st.number_input(
@@ -88,11 +94,19 @@ with st.sidebar:
         "Start Processing", disabled=not is_ready,
         type="primary", use_container_width=True,
     )
+    st.divider()
+    st.caption(
+        "**Dr Badrulhisham Bahadzor**  \n"
+        "Consultant Urologist  \n"
+        "[drbadrul@urology.my](mailto:drbadrul@urology.my)  \n"
+        "Visit [www.urology.my](https://www.urology.my) to know more."
+    )
 
 # ---------------------------------------------------------------------------
 # Title
 # ---------------------------------------------------------------------------
 st.title("Acoustic Uroflowmetry Analysis")
+st.caption("Audio-based flow curve signal analysis")
 
 # ---------------------------------------------------------------------------
 # Processing pipeline
@@ -576,3 +590,12 @@ if start_button and is_ready:
     process_audio(uploaded_file, total_volume_ml)
 elif not is_ready:
     st.info("Upload a WAV file and enter the total voided volume to begin analysis.")
+
+# ---------------------------------------------------------------------------
+# Disclaimer
+# ---------------------------------------------------------------------------
+st.divider()
+st.caption(
+    "**Disclaimer:** This app performs signal processing only. "
+    "It does not provide medical diagnoses or constitute clinical advice."
+)
