@@ -455,9 +455,6 @@ def process_audio(file, volume_ml):
                 ramp_applied = True
 
         diag['ramp_duration'] = ramp_duration_sec
-        diag['ramp_debug'] = f"applied={ramp_applied}, " \
-                             f"ramp_frames={ramp_frames if ramp_applied else 'N/A'}, " \
-                             f"dt={dt:.4f}" if np.any(nz_mask) else "no non-zero data"
 
         # Trim trailing low-amplitude tail (post-flow noise).
         # The offset detection can overshoot because the signal decays
@@ -605,9 +602,6 @@ def process_audio(file, volume_ml):
                 f"**Baseline:** offset threshold (2\u03c3) &nbsp;|&nbsp; "
                 f"**Smoother:** Gaussian (\u03c3={diag['gauss_sigma']}) &nbsp;|&nbsp; "
                 f"**Onset Ramp:** {diag['ramp_duration']:.2f} s"
-            )
-            st.write(
-                f"Debug: {diag.get('ramp_debug', 'N/A')}"
             )
             st.pyplot(fig3)
 
