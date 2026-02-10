@@ -431,6 +431,34 @@ def process_audio(file, volume_ml):
                 smoothed = gaussian_filter1d(segment, sigma=seg_sigma, mode='constant', cval=0.0)
                 rms_final[s:e] = np.maximum(smoothed, 0)
 
+        # Adaptive half-cosine onset ramp applied from frame 0.
+        # When noise_std is very small, the backward onset extension
+        # gains only 1-2 frames, causing a near-vertical jump at t=0.
+        # The ramp covers the first N frames unconditionally — frames
+        # that are already 0 stay at 0 (0 × window = 0), so leading
+        # zeros and any micro-gaps within the ramp region are preserved.
+        # By the time a real intermittent pause occurs (seconds in),
+        # the window value is already 1.0, so no attenuation happens.
+        peak_trimmed_idx = peak_idx - final_onset
+        time_to_peak = times_trimmed[min(peak_trimmed_idx, len(times_trimmed) - 1)]
+        ramp_duration_sec = np.clip(0.10 * time_to_peak, 0.5, 2.0)
+
+        nz_mask = rms_final > 0
+        ramp_applied = False
+        if np.any(nz_mask):
+            dt = times_trimmed[1] - times_trimmed[0] if len(times_trimmed) > 1 else 1.0
+            ramp_frames = min(int(ramp_duration_sec / dt), len(rms_final))
+            if ramp_frames > 1:
+                t_ramp = np.linspace(0, np.pi, ramp_frames, endpoint=True)
+                window = 0.5 * (1 - np.cos(t_ramp))
+                rms_final[:ramp_frames] *= window
+                ramp_applied = True
+
+        diag['ramp_duration'] = ramp_duration_sec
+        diag['ramp_debug'] = f"applied={ramp_applied}, " \
+                             f"ramp_frames={ramp_frames if ramp_applied else 'N/A'}, " \
+                             f"dt={dt:.4f}" if np.any(nz_mask) else "no non-zero data"
+
         # Trim trailing low-amplitude tail (post-flow noise).
         # The offset detection can overshoot because the signal decays
         # gradually through the threshold without a clean zero gap.
@@ -575,7 +603,11 @@ def process_audio(file, volume_ml):
         with st.expander("Step 4: Zero-Floor & Smoothing"):
             st.write(
                 f"**Baseline:** offset threshold (2\u03c3) &nbsp;|&nbsp; "
-                f"**Smoother:** Gaussian (\u03c3={diag['gauss_sigma']})"
+                f"**Smoother:** Gaussian (\u03c3={diag['gauss_sigma']}) &nbsp;|&nbsp; "
+                f"**Onset Ramp:** {diag['ramp_duration']:.2f} s"
+            )
+            st.write(
+                f"Debug: {diag.get('ramp_debug', 'N/A')}"
             )
             st.pyplot(fig3)
 

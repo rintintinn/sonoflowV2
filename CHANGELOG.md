@@ -1,5 +1,28 @@
 # Sonoflow V2 — Change Log
 
+## Session 3: Robust Onset Ramp (Frame-0 Application)
+
+### Problem
+The half-cosine onset ramp was ineffective on recordings where Gaussian smoothing + noise clamping fragmented the onset into short micro-segments. The first non-zero segment could be as few as 8 frames (~0.09s), so `ramp_frames = min(target, seg_len) = 8` — the ramp covered only 0.09s instead of the intended 0.50s, producing a near-vertical jump at t=0.
+
+**Root cause:** `ramp_frames = min(ramp_frames_target, seg_len)` clamped the ramp to the first segment's length.
+
+### Fix: Apply ramp from frame 0 unconditionally
+- Removed segment detection loop (`diff_nz`, `seg_starts`, `seg_ends`, `for s, e in zip(...)`)
+- Ramp window now applied to `rms_final[:ramp_frames]` starting from frame 0
+- `ramp_frames` clamped only by total signal length, not by segment length
+- Frames already at 0 stay at 0 (0 × window = 0), preserving leading zeros and micro-gaps
+- By the time a real intermittent pause occurs (seconds in), the window value is 1.0 — no attenuation
+- Updated comment block and debug diagnostic (removed `seg_start` field)
+
+### What stayed the same
+- Ramp duration formula: `np.clip(0.10 * time_to_peak, 0.5, 2.0)`
+- Half-cosine window shape: `0.5 * (1 - cos(linspace(0, π, N)))`
+- Segment-wise Gaussian smoothing (unchanged — still uses per-segment detection)
+- Trailing tail trim, Step 5 normalisation
+
+---
+
 ## Session 1: Initial Code Review & End-of-Flow Detection
 
 ### Code Review Findings
@@ -104,12 +127,34 @@
 - **Smoothed-signal pause mask:** Used `rms_smoothed_full` to identify dip regions and zero them in the raw floored signal. Reverted at user's preference — the noise_std threshold version was preferred.
 
 
+## Session 4: Adaptive Cosine Onset Ramp
+
+### Problem
+When the noise floor is very clean (std near 0), the backward onset extension from 5-sigma to 2-sigma gains only 1-2 frames. The curve jumps near-vertically from 0 to significant flow at t=0. Real uroflowmetry curves have a gradual onset ramp.
+
+### Fix: Adaptive Half-Cosine Onset Ramp (Step 4)
+Applied after segment-wise Gaussian smoothing, before trailing tail trim.
+
+- **Duration** = 10% of time-to-peak, clamped to [0.5 s, 2.0 s]
+- **Window** = half-cosine: `0.5 * (1 - cos(linspace(0, pi, N)))` — produces a smooth S-curve from 0 to 1
+- **Scope** = only the FIRST non-zero segment (onset) is ramped; internal segments after zero pauses are NOT ramped, preserving intermittency evidence
+- `endpoint=True` so window reaches exactly 1.0 at the ramp end (no discontinuity)
+- AUC normalization in Step 5 auto-compensates for the small area reduction from ramping
+
+### What Does NOT Change
+- Event detection (Step 3) — ramp is post-processing only
+- Zero-flooring and noise_std threshold — already applied before ramp
+- Segment-wise Gaussian smoothing — untouched
+- Trailing tail trim — operates on signal end, no interaction
+- Qmax — peak region unaffected by onset ramp
+
+
 ## Current Pipeline Summary (Steps 1-5)
 
 1. **Signal Conditioning & RMS** — bandpass 300-2500 Hz, librosa RMS (frame=1024, hop=512)
 2. **Pre-Processing** — Otsu-based artifact removal + Savitzky-Golay smoothing (window=51, poly=3) BEFORE event detection
 3. **Event Detection** — hysteresis (5 sigma onset / 2 sigma offset), adaptive hangover 2-8 s, spectral flux validation, PELT changepoint; onset extended backwards to offset_threshold for zero-start
-4. **Zero-Floor & Smoothing** — subtract offset_threshold, noise_std threshold, segment-wise Gaussian smoothing (sigma=1.5% of segment), trailing tail trim (2% of peak)
+4. **Zero-Floor & Smoothing** — subtract offset_threshold, noise_std threshold, segment-wise Gaussian smoothing (sigma=1.5% of segment), adaptive half-cosine onset ramp (10% of time-to-peak, 0.5-2.0 s), trailing tail trim (2% of peak)
 5. **Normalisation & Flow Rate** — AUC volume normalisation, Qmax sustain validation (>= 200 ms at 90% of peak)
 
 
